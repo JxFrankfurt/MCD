@@ -16,8 +16,11 @@ START                  ; first instruction of program
 		;all the menu options could be put into one string to make things faster
 
 	JSR INIT_DUART		
-
+	JSR OPTION_DISPLAY
+	JMP OPTION_SELECTION ;Most of the program's execution happens in this loop
+	
 OPTION_DISPLAY
+	MOVE.L A1,-(SP)
 	LEA menu, A1 
 	JSR PUT_STRING
 	LEA optionOne, A1 
@@ -32,52 +35,52 @@ OPTION_DISPLAY
 	JSR PUT_STRING
 	LEA optionSix, A1 
 	JSR PUT_STRING
-	
+	MOVE.L (SP)+,A1
+
+
 OPTION_SELECTION	
 	JSR GET_HEX ;output to D1 '06'
 	;compare to 1,2,3,4,5,6
-	CMPI #1,D1
+	CMP.B #1,D1
 	BEQ dispMem ; Display a memory location
-	CMPI #2,D1
+	CMP.B #2,D1
 	BEQ editMem ; edit  a memory location
-	CMPI #3,D1
+	CMP.B #3,D1
 	BEQ dispReg ; Display a register
-	CMPI #4,D1
+	CMP.B #4,D1
 	BEQ editReg ; edit a register
-	CMPI #5,D1
+	CMP.B #5,D1
 	BEQ loadSRec ; load an S record
-	CMPI #6,D1
+	CMP.B #6,D1
 	BEQ exeSRec ; execute an S record
-	BRA notAnOption ;if the user input is not a 1 through 6, wait for another input.
-
-dispMem
-	JSR READ_MEMORY
-	JMP OPTION_DISPLAY
-	
-editMem
-	JSR WRITE_MEMORY ;can only write word/long on even addresses. I only implemented byte inputs.
-	JMP OPTION_DISPLAY
-	
-dispReg
-	JSR READ_REGISTER
-	JMP OPTION_DISPLAY
-
-editReg
-	JSR WRITE_REGISTER
-	JMP OPTION_DISPLAY
-
-loadSRec
-	JSR LOAD_SREC
-	JMP OPTION_DISPLAY
-
-exeSRec
-	JSR EXE_SREC
-	JMP OPTION_DISPLAY
-
-notAnOption
+notAnOption ;if the user input is not a 1 through 6, print the menu and wait for another input.
 	LEA menu, A1 
 	JSR PUT_STRING
 	BRA OPTION_SELECTION
+
+dispMem
+	JSR READ_MEMORY
+	JSR OPTION_DISPLAY
+	
+editMem
+	JSR WRITE_MEMORY ;can only write word/long on even addresses. I only implemented byte inputs.
+	JSR OPTION_DISPLAY
+	
+dispReg
+	JSR READ_REGISTER
+	JSR OPTION_DISPLAY
+
+editReg
+	JSR WRITE_REGISTER
+	JSR OPTION_DISPLAY
+
+loadSRec
+	JSR LOAD_SREC
+	JSR OPTION_DISPLAY
+
+exeSRec
+	JSR EXE_SREC
+	JSR OPTION_DISPLAY
 	
 EXE_SREC ;execute the S-Record file stored in RAM: 00201500. Don't do this before loading an S-record. That's undefined behavior.
 	;MOVEM DX,-(SP)
@@ -154,19 +157,19 @@ WRITE_BYTE
 	RTS
 
 WRITE_WORD ;INPUTS: D1: WORD TO WRITE A0: LOCATION TO WRITE
-	MOVEM D1,-(SP)
+	MOVE.L D1,-(SP)
 	JSR WRITE_BYTE ;writes the low byte of D1
 	LSR.W #$8,D1
 	JSR WRITE_BYTE
-	MOVEM (SP)+,D1
+	MOVE.L (SP)+,D1
 	RTS
 
 WRITE_LONGWORD ;INPUTS: D1: LONGWORD TO WRITE A0: LOCATION TO WRITE
-	MOVEM D1,-(SP)
+	MOVE.L D1,-(SP)
 	JSR WRITE_WORD
 	SWAP D1
 	JSR WRITE_WORD
-	MOVEM (SP)+,D1
+	MOVE.L (SP)+,D1
 	RTS
 	
 READ_MEMORY ;print the contents of a memory location to putty ROM:(000000-00FFFF), RAM:(200000-20FFFF)
@@ -353,9 +356,11 @@ ADD_37
 	ADDI.B #$37, D0 ;D0 contains 41H which represents A in ascii
 	BRA END_GET_ASCII	
 	
-	
+*Be careful changing the stack here. There are operations in write D0,D1,A1 which rely on pointer arithmetic using the stack.
 WRITE_REGISTER
-	MOVEM    D0-D1/A1,-(SP)
+	MOVE.L  D0,-(SP)
+	MOVE.L	D1,-(SP)
+	MOVE.L	A1,-(SP)
 	LEA promptWriteReg1, A1 ;print prompt asking for which register (registers D0-D7, A0-A6[no stack pointer editing. That would break things])
 	JSR PUT_STRING
 	JSR GET_BYTE ;D1 contains the register to edit
@@ -396,14 +401,26 @@ WRITE_REGISTER
 	CMP.B #$A6,D0
 	BEQ WRITE_A6
 END_WRITE_REGISTER
-	MOVEM (SP)+,D0-D1/A1
+	MOVE.L (SP)+,A1
+	MOVE.L (SP)+,D1
+	MOVE.L (SP)+,D0
 	RTS
-	
+
+*Write D0, D1, A1 while they're still on the stack
 WRITE_D0
-	MOVE.L D1,D0
+	MOVE.L A2,-(SP)
+	MOVEA #$C,A2 ;D0 is C bytes from the top of the stack
+	ADD.L SP,A2 ;A2 now points at the value we will restore to D0
+	MOVE.L D1,(A2)
+	MOVE.L (SP)+,A2
 	BRA END_WRITE_REGISTER
 WRITE_D1
-	BRA END_WRITE_REGISTER ;D1 contains the value they want by default
+	MOVE.L A2,-(SP)
+	MOVEA #$8,A2 
+	ADD.L SP,A2
+	MOVE.L D1,(A2)
+	MOVE.L (SP)+,A2
+	BRA END_WRITE_REGISTER
 WRITE_D2
 	MOVE.L D1,D2
 	BRA END_WRITE_REGISTER
@@ -426,7 +443,7 @@ WRITE_A0
 	MOVE.L D1,A0
 	BRA END_WRITE_REGISTER
 WRITE_A1
-	MOVE.L D1,A1
+	MOVE.L D1,(SP)
 	BRA END_WRITE_REGISTER
 WRITE_A2
 	MOVE.L D1,A2
@@ -491,15 +508,15 @@ LOW_LETTER
 	RTS
 	
 GET_BYTE ;D1 output
-	MOVEM    D0,-(SP) ;put D0 onto the stack
+	MOVE.L    D0,-(SP) ;put D0 onto the stack
 	JSR GET_HEX ;D1 has '0A'
 	LSL.B #4,D1 ;D1 has 'A0'
 	;copy D1 to D0
 	MOVE.B    D1,D0 ;D0 has 'A0'
 	
 	JSR GET_HEX ;D1 has '05'
-	ADD D0,D1 ;D1 has 'A5'
-	MOVEM (SP)+,D0 ;pop D0 back off the stack
+	ADD.B D0,D1 ;D1 has 'A5'
+	MOVE.L (SP)+,D0 ;pop D0 back off the stack
 	RTS
 	
 GET_WORD ;D1 output
