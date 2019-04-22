@@ -16,8 +16,8 @@ START                  ; first instruction of program
 		;all the menu options could be put into one string to make things faster
 
 	JSR INIT_DUART		
-	JSR OPTION_DISPLAY
-	JMP OPTION_SELECTION ;Most of the program's execution happens in this loop
+	;JMP OPTION_DISPLAY
+	;JMP OPTION_SELECTION ;Most of the program's execution happens in this loop
 	
 OPTION_DISPLAY
 	MOVE.L A1,-(SP)
@@ -37,9 +37,10 @@ OPTION_DISPLAY
 	JSR PUT_STRING
 	MOVE.L (SP)+,A1
 
-
-OPTION_SELECTION	
-	JSR GET_HEX ;output to D1 '06'
+OPTION_SELECTION
+	MOVE.L D1,-(SP)	
+OPTION_SELECTION_LOOP
+	JSR GET_HEX ;output to D1 '06' ;contaminates D1
 	;compare to 1,2,3,4,5,6
 	CMP.B #1,D1
 	BEQ dispMem ; Display a memory location
@@ -56,43 +57,61 @@ OPTION_SELECTION
 notAnOption ;if the user input is not a 1 through 6, print the menu and wait for another input.
 	LEA menu, A1 
 	JSR PUT_STRING
-	BRA OPTION_SELECTION
+	BRA OPTION_SELECTION_LOOP	
 
 dispMem
+	MOVE.L (SP)+,D1
 	JSR READ_MEMORY
-	JSR OPTION_DISPLAY
+	;JSR OPTION_DISPLAY
+	JMP OPTION_DISPLAY
 	
 editMem
+	MOVE.L (SP)+,D1
 	JSR WRITE_MEMORY ;can only write word/long on even addresses. I only implemented byte inputs.
-	JSR OPTION_DISPLAY
+	;JSR OPTION_DISPLAY
+	JMP OPTION_DISPLAY
 	
 dispReg
+	MOVE.L (SP)+,D1
+	;pop D1 here instead of at the end of selection?
 	JSR READ_REGISTER
-	JSR OPTION_DISPLAY
+	;JSR OPTION_DISPLAY
+	JMP OPTION_DISPLAY
 
 editReg
+	MOVE.L (SP)+,D1
 	JSR WRITE_REGISTER
-	JSR OPTION_DISPLAY
+	;JSR OPTION_DISPLAY
+	JMP OPTION_DISPLAY
 
 loadSRec
+	MOVE.L (SP)+,D1
 	JSR LOAD_SREC
-	JSR OPTION_DISPLAY
+	;JSR OPTION_DISPLAY
+	JMP OPTION_DISPLAY
 
 exeSRec
+	MOVE.L (SP)+,D1
 	JSR EXE_SREC
-	JSR OPTION_DISPLAY
+	;JSR OPTION_DISPLAY
+	JMP OPTION_DISPLAY
 	
 EXE_SREC ;execute the S-Record file stored in RAM: 00201500. Don't do this before loading an S-record. That's undefined behavior.
-	;MOVEM DX,-(SP)
 	JSR $00201500
 	;the S-RECORD should end in an RTS
-	;MOVEM (SP)+,DX
 	RTS
 	
 LOAD_SREC ;Load all S-Record files to the same destination: RAM: 00201500 (offset by the number in the S-record?)
 	;1. throw away S byte. 2. check how many bytes 3. check if it's a 0,1,or 8.
-	MOVEM D0-D2/A0,-(SP)
+	;MOVEM D0-D2/A0,-(SP)
+	MOVE.L D0,-(SP)
+	MOVE.L D1,-(SP)
+	MOVE.L D2,-(SP)
+	MOVE.L A0,-(SP)
+	MOVE.L A1,-(SP)
 	MOVEA.L #$00201500,A0 ;(magic number) the address is actually within the S-Record, but I'm ignoring that for now.
+	LEA SRecPrompt,A1
+	JSR PUT_STRING
 LS_NEXT_LINE
 	JSR GET_CHAR ;throw away S byte
 	JSR GET_HEX ;D1 will have '00', '01', or '08'
@@ -105,7 +124,12 @@ LS_NEXT_LINE
 	BEQ CONSUME_BYTES_AND_END
 	BRA CONSUME_BYTES
 END_LOAD_SREC
-	MOVEM (SP)+,D0-D2/A0
+	;MOVEM (SP)+,D0-D2/A0
+	MOVE.L (SP)+,A1
+	MOVE.L (SP)+,A0
+	MOVE.L (SP)+,D2
+	MOVE.L (SP)+,D1
+	MOVE.L (SP)+,D0
 	RTS
 	
 READ_SREC ;INPUT: D2 Contains number of bytes to read. The first two and the last byte read can be ignored.
@@ -173,7 +197,11 @@ WRITE_LONGWORD ;INPUTS: D1: LONGWORD TO WRITE A0: LOCATION TO WRITE
 	RTS
 	
 READ_MEMORY ;print the contents of a memory location to putty ROM:(000000-00FFFF), RAM:(200000-20FFFF)
-	MOVEM	D0-D1/A0-A1,-(SP)
+	;MOVEM	D0-D1/A0-A1,-(SP)
+	MOVE.L D0,-(SP)
+	MOVE.L D1,-(SP)
+	MOVE.L A0,-(SP)
+	MOVE.L A1,-(SP)
 	LEA promptReadMemory1,A1 ;RAM(1) or RAM(2)
 	JSR PUT_STRING
 	JSR GET_CHAR ;D1 has the 31 or 32
@@ -186,7 +214,11 @@ READ_MEMORY ;print the contents of a memory location to putty ROM:(000000-00FFFF
 	BEQ READ_RAM
 	BRA READ_ROM
 END_READ_MEMORY
-	MOVEM (SP)+, D0-D1/A0-A1
+	;MOVEM (SP)+, D0-D1/A0-A1
+	MOVE.L (SP)+,A1
+	MOVE.L (SP)+,A0
+	MOVE.L (SP)+,D1
+	MOVE.L (SP)+,D0
 	RTS
 READ_ROM
 	
@@ -208,9 +240,13 @@ READ_RAM
 	BRA END_READ_MEMORY
 	
 READ_REGISTER ;print the contents of a register to putty
-	MOVEM D0-D1/A1,-(SP)
+	;MOVEM D0-D1/A1,-(SP)
+	MOVE.L D0,-(SP)
+	MOVE.L D1,-(SP)
+	MOVE.L A1,-(SP)
 	LEA promptReadReg1, A1 ;ask for which register to print
 	JSR PUT_STRING
+	MOVE.L (SP)+,A1 ;added this line to fix contaminated A1 (contaminated by prompt)
 	JSR GET_BYTE ;D1 contains reg to print contents
 	CMP.B #$D0,D1
 	BEQ READ_D0_BRA
@@ -246,76 +282,84 @@ READ_REGISTER ;print the contents of a register to putty
 	CMP.B #$A7,D1
 	BEQ READ_A7_BRA
 endRead
-	MOVEM (SP)+,D0-D1/A1
+	;MOVEM (SP)+,D0-D1/A1
+	*MOVE.L (SP)+,A1
+	MOVE.L (SP)+,D1
+	MOVE.L (SP)+,D0
 	RTS
 	
 READ_D0_BRA
 	JSR READ_D0
 	JMP endRead
 READ_D1_BRA
-	MOVE D1,D0
+	;MOVE.L D1,D0
+	;pop D1 before this. or do pointer arith? or just set it equal to the item without popping
+	MOVE.L (SP),D0
 	JSR READ_D0
 	JMP endRead
 READ_D2_BRA
-	MOVE D2,D0
+	MOVE.L D2,D0
 	JSR READ_D0
 	JMP endRead
 READ_D3_BRA
-	MOVE D3,D0
+	MOVE.L D3,D0
 	JSR READ_D0
 	JMP endRead
 READ_D4_BRA
-	MOVE D4,D0
+	MOVE.L D4,D0
 	JSR READ_D0
 	JMP endRead
 READ_D5_BRA
-	MOVE D5,D0
+	MOVE.L D5,D0
 	JSR READ_D0
 	JMP endRead
 READ_D6_BRA
-	MOVE D6,D0
+	MOVE.L D6,D0
 	JSR READ_D0
 	JMP endRead
 READ_D7_BRA
-	MOVE D7,D0
+	MOVE.L D7,D0
 	JSR READ_D0
 	JMP endRead
 READ_A0_BRA
-	MOVE A0,D0
+	MOVE.L A0,D0
 	JSR READ_D0
 	JMP endRead
 READ_A1_BRA
-	MOVE A1,D0
+	MOVE.L A1,D0
 	JSR READ_D0
 	JMP endRead
 READ_A2_BRA
-	MOVE A2,D0
+	MOVE.L A2,D0
 	JSR READ_D0
 	JMP endRead
 READ_A3_BRA
-	MOVE A3,D0
+	MOVE.L A3,D0
 	JSR READ_D0
 	JMP endRead
 READ_A4_BRA
-	MOVE A4,D0
+	MOVE.L A4,D0
 	JSR READ_D0
 	JMP endRead
 READ_A5_BRA
-	MOVE A5,D0
+	MOVE.L A5,D0
 	JSR READ_D0
 	JMP endRead
 READ_A6_BRA
-	MOVE A6,D0
+	MOVE.L A6,D0
 	JSR READ_D0
 	JMP endRead
 READ_A7_BRA
-	MOVE A7,D0
+	MOVE.L A7,D0
 	JSR READ_D0
 	JMP endRead
 
 
 READ_D0 ;Register(AABBCCDD) -> to ASCII(4141424243434444) -> PUT_CHAR
-	MOVEM D0-D2,-(SP)
+	;MOVEM D0-D2,-(SP)
+	MOVE.L D0,-(SP)
+	MOVE.L D1,-(SP)
+	MOVE.L D2,-(SP)
 	MOVE #$8,D2 ;loop counter
 D0_READ_LOOP ;currently prints "DDCCBBAA"
 	*right now I'm printing the Bytes right to left. I want left to right. I can do this simply if I don't use a loop. :( I want a loop.
@@ -324,7 +368,10 @@ D0_READ_LOOP ;currently prints "DDCCBBAA"
 	JSR PUT_CHAR	;D1.B gets printed
 	SUBQ #$1,D2
 	BNE D0_READ_LOOP
-	MOVEM (SP)+,D0-D2
+	;MOVEM (SP)+,D0-D2
+	MOVE.L (SP)+,D2
+	MOVE.L (SP)+,D1
+	MOVE.L (SP)+,D0
 	RTS
 
 
@@ -534,6 +581,7 @@ GET_LONGWORD ;D1 output
 ;PUT STRING SUBROUTINE
 PUT_STRING
 	;LEA (menu,PC),A1 ;assume A1 contains the address to the the string to be printed
+	MOVE.B D1,-(SP)
 PUT_STRING_CHECK_NULL
 	;compare (A1) to null terminator (null terminator is zero)
 	MOVE.B (A1)+,D1
@@ -544,6 +592,7 @@ PUT_STRING_CHECK_NULL
 	JSR PUT_CHAR
 	JMP PUT_STRING_CHECK_NULL ;Unconditional jump to the top of this code block (BRA or JMP?)
 NULL_TERMINATOR
+	MOVE.B (SP)+,D1
 	RTS
 ;TODO: Figure out how I should access the string that is hardcoded below.
 *-----------------------------------------------
@@ -655,6 +704,7 @@ promptReadMemory1 DC.B 10,13,'Read RAM(1) or ROM(2)?',0
 promptReadMemory2 DC.B 10,13,'What memory location would you like to read? (0000-FFFF)',0
 promptWriteMemory1 DC.B 10,13,'What memory location would you like to edit? RAM:(1000-FFFF)',0
 promptWriteMemory2 DC.B 10,13,'What hexidecimal value do you want to put into that memory location? (00-FF)',0 ;LONGWORD/WORD doens't work on odd addresses. This is a place to add functionality if I have time.
+SRecPrompt DC.B 10,13,'Copy and paste an SRec[0,1,8] here:',10,13,0
     END    START        ; last line of source
 
 
