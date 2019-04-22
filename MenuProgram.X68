@@ -5,7 +5,7 @@
 * Description: This monitor program has 6 user facing functions:
 	
 *-----------------------------------------------------------
-SUPER_STACK     EQU     $200800	; MUST BE A VALID RAM LOCATION
+SUPER_STACK     EQU     $201400	; MUST BE A VALID RAM LOCATION
     ORG    $1000
 START                  ; first instruction of program
 	;0. Setup duart constants like the book (ACIAs?)
@@ -97,7 +97,7 @@ exeSRec
 	JMP OPTION_DISPLAY
 	
 EXE_SREC ;execute the S-Record file stored in RAM: 00201500. Don't do this before loading an S-record. That's undefined behavior.
-	JSR $00201500
+	JSR SRecLocation
 	;the S-RECORD should end in an RTS
 	RTS
 	
@@ -109,7 +109,7 @@ LOAD_SREC ;Load all S-Record files to the same destination: RAM: 00201500 (offse
 	MOVE.L D2,-(SP)
 	MOVE.L A0,-(SP)
 	MOVE.L A1,-(SP)
-	MOVEA.L #$00201500,A0 ;(magic number) the address is actually within the S-Record, but I'm ignoring that for now.
+	MOVEA.L #SRecLocation,A0 ;(magic number) the address is actually within the S-Record, but I'm ignoring that for now.
 	LEA SRecPrompt,A1
 	JSR PUT_STRING
 LS_NEXT_LINE
@@ -361,6 +361,7 @@ READ_D0 ;Register(AABBCCDD) -> to ASCII(4141424243434444) -> PUT_CHAR
 	MOVE.L D1,-(SP)
 	MOVE.L D2,-(SP)
 	MOVE #$8,D2 ;loop counter
+	JSR PUT_CRLF
 D0_READ_LOOP ;currently prints "DDCCBBAA"
 	*right now I'm printing the Bytes right to left. I want left to right. I can do this simply if I don't use a loop. :( I want a loop.
 	ROL.L #$4, D0 ; "ABBCCDDA"
@@ -577,6 +578,12 @@ GET_LONGWORD ;D1 output
 	SWAP D1 ;D1 has 'A542XXXX'
 	JSR GET_WORD ;D1 has 'A5421012'
 	RTS
+PUT_CRLF
+	MOVE.L A1,-(SP)
+	LEA CRLF,A1
+	JSR PUT_STRING
+	MOVE.L (SP)+,A1
+	RTS
 *-----------------------------------------
 ;PUT STRING SUBROUTINE
 PUT_STRING
@@ -689,7 +696,7 @@ RxRDY EQU 0 ;Recieve ready bit position
 TxRDY EQU 2 ;Transmit ready bit position
 BAUD EQU $CC ;baud rate value = 19,200 baud
 ; *******************************************************************
-
+SRecLocation EQU $00201500 ;This is where I put the user's S-record
 menu DC.B 10,13,'This is my menu. Type a number 1 through 6.',0
 optionOne DC.B 10,13,'1. Display a memory location',0
 optionTwo DC.B 10,13,'2. Write to a memory location',0
@@ -697,14 +704,15 @@ optionThree DC.B 10,13,'3. Display a register',0
 optionFour DC.B 10,13,'4. Write to a register',0
 optionFive DC.B 10,13,'5. Load an S record',0
 optionSix DC.B	10,13,'6. Execute the program',10,13,0 
-promptReadReg1 DC.B 10,13,'What register would you like to read? (D0-D7/A0-A7)',0
-promptWriteReg1 DC.B 10,13,'What register would you like to edit? (D0-D7/A0-A6)',0
-promptWriteReg2 DC.B 10,13,'What hexidecimal value do you want to put into that register? (000000-FFFFFF)',0
-promptReadMemory1 DC.B 10,13,'Read RAM(1) or ROM(2)?',0
-promptReadMemory2 DC.B 10,13,'What memory location would you like to read? (0000-FFFF)',0
-promptWriteMemory1 DC.B 10,13,'What memory location would you like to edit? RAM:(1000-FFFF)',0
-promptWriteMemory2 DC.B 10,13,'What hexidecimal value do you want to put into that memory location? (00-FF)',0 ;LONGWORD/WORD doens't work on odd addresses. This is a place to add functionality if I have time.
+promptReadReg1 DC.B 10,13,'What register would you like to read? (D0-D7/A0-A7)',10,13,0
+promptWriteReg1 DC.B 10,13,'What register would you like to edit? (D0-D7/A0-A6)',10,13,0
+promptWriteReg2 DC.B 10,13,'What hexidecimal value do you want to put into that register? (000000-FFFFFF)',10,13,0
+promptReadMemory1 DC.B 10,13,'Read RAM(1) or ROM(2)?',10,13,0
+promptReadMemory2 DC.B 10,13,'What memory location would you like to read? (0000-FFFF)',10,13,0
+promptWriteMemory1 DC.B 10,13,'What memory location would you like to edit? RAM:(1000-FFFF)',10,13,0
+promptWriteMemory2 DC.B 10,13,'What hexidecimal value do you want to put into that memory location? (00-FF)',10,13,0 ;LONGWORD/WORD doens't work on odd addresses. This is a place to add functionality if I have time.
 SRecPrompt DC.B 10,13,'Copy and paste an SRec[0,1,8] here:',10,13,0
+CRLF DC.B 10,13,0
     END    START        ; last line of source
 
 
