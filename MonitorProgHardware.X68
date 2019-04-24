@@ -194,14 +194,15 @@ EXE_SREC ;execute the S-Record file stored in RAM: 00201500. Don't do this befor
 	;the S-RECORD should end in an RTS
 	RTS
 	
-LOAD_SREC ;Load all S-Record files to the same destination: RAM: 00201500 (offset by the number in the S-record?)
-	;1. throw away S byte. 2. check how many bytes 3. check if it's a 0,1,or 8.
+LOAD_SREC ;Load all S-Record files to the same location in RAM: defined as constant 'SRecLocation' 
+	;I add the bytes in the S-record consecutively. I currently ignore the offset number in the S-record. That means ORG definitions don't work here the way they're defined.
+	;1. throw away S byte. 2. check if it's a 0,1,or 8. 3. check how many bytes 4. read/eat those bytes and end if it was an S8
 	MOVE.L D0,-(SP)
 	MOVE.L D1,-(SP)
 	MOVE.L D2,-(SP)
 	MOVE.L A0,-(SP)
 	MOVE.L A1,-(SP)
-	MOVEA.L #SRecLocation,A0 ;(magic number) the address is actually within the S-Record, but I'm ignoring that for now.
+	MOVEA.L #SRecLocation,A0 ;defined at the top of the program
 	LEA SRecPrompt,A1
 	JSR PUT_STRING
 LS_NEXT_LINE
@@ -224,9 +225,8 @@ END_LOAD_SREC
 	RTS
 	
 READ_SREC ;INPUT: D2 Contains number of bytes to read. The first two and the last byte read can be ignored.
-	JSR GET_BYTE ;ignore the address in the S-Record. Magic number will be the starting address. All code must follow one ORG in the S-Record.
-	JSR GET_BYTE
-	SUBQ #$2, D2
+	JSR GET_WORD ;ignore the address in the S-Record. Magic number will be the starting address. All code must follow one ORG in the S-Record.
+	SUBQ.B #$2, D2
 RS_LOOP ;After each byte, increment the address
 	JSR GET_BYTE ;D1 will have
 	MOVE.B D1,(A0)+
@@ -238,13 +238,13 @@ RS_LOOP ;After each byte, increment the address
 	
 CONSUME_BYTES ;INPUT: D2 contains the number in hex of bytes to eat with get_char
 	JSR GET_BYTE ;gets one hex byte from 2 ascii bytes. This is okay.
-	SUBQ #$1, D2
+	SUBQ.B #$1, D2
 	BEQ LS_NEXT_LINE 	; not END_LOAD_SREC, instead: go to the next line.
 	BRA CONSUME_BYTES
 	
 CONSUME_BYTES_AND_END ;INPUT: D2 contains the number of bytes to eat with get_char
 	JSR GET_BYTE ;gets one hex byte from 2 ascii bytes. This is okay.
-	SUBQ #$1, D2
+	SUBQ.B #$1, D2
 	BEQ END_LOAD_SREC
 	BRA CONSUME_BYTES_AND_END
 	
@@ -692,8 +692,8 @@ NULL_TERMINATOR
 	MOVE.L (SP)+,D1
 	RTS
 *-----------------------------------------------
-*----------------------------------------------
-*;GET CHAR SUBROUTINE, takes ascii from putty and puts it into D1
+**----------------------------------------------
+**;GET CHAR SUBROUTINE, takes ascii from putty and puts it into D1
 GET_CHAR 
 ;SRA = Status Register A; "Is there something there to receive?"
 ;RBA = Receive buffer A; "Get the data that is there."
@@ -730,7 +730,7 @@ OUT_POLL MOVE.B SRA(A0),D2 ;Status Register A
          MOVE.L (SP)+,A0
          MOVE.L (SP)+,D2
          RTS 
-*----------------------------------------------  
+**----------------------------------------------  
 *----------------------------------------------  SIM
 ;	 Read a single character from the keyboard into D1.B.
 *GET_CHAR   MOVE.L      D0,-(SP)
@@ -753,14 +753,11 @@ INIT_DUART
 	MOVE.B #$30,CRA(A0) ;Reset TxA
 	MOVE.B #$20,CRA(A0) ;Reset RxA
 	MOVE.B #$10,CRA(A0) ;Reset MRA pointer
-
 ; Initialization:
-
 	MOVE.B #$80,ACR(A0) ;selects baud rate set 2
 	MOVE.B #BAUD,CSRA(A0) ;set 19.2k baud Rx/Tx
-
 	MOVE.B #$13,MR1A(A0) ;8-bits, no parity, 1 stop bit
-; This is the most important register to set in the 68681 DUART.
+; MR2A is the most important register to set in the 68681 DUART.
 ; 07 sets: Normal mode, CTS and RTS disabled, stop bit length = 1
 ; For testing load $#47 to enable auto-echo
 	MOVE.B #$07,MR2A(A0)
